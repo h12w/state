@@ -152,6 +152,16 @@ func (rc symlinkRC) Rollback() error {
 	if rc.OldSrc == "" {
 		return nil
 	}
+	src, err := os.Readlink(rc.Link)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+	} else if src == rc.OldSrc {
+		return nil
+	} else {
+		os.Remove(rc.Link)
+	}
 	return os.Symlink(rc.OldSrc, rc.Link)
 }
 
