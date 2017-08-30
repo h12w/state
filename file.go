@@ -2,7 +2,6 @@ package state
 
 import (
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 
@@ -15,54 +14,46 @@ type WriteFile struct {
 	Perm     os.FileMode // default 0644
 }
 
-type writeFileRC struct {
-	Filename       string
-	BackupFilename string
+type writeFileU struct {
+	Filename   string
+	BackupData []byte
 }
 
-func (rc writeFileRC) Rollback() error {
-	if rc.BackupFilename == "" {
+func (rc writeFileU) Unapply() error {
+	if rc.BackupData == nil {
 		return os.Remove(rc.Filename)
 	}
-	return os.Rename(rc.BackupFilename, rc.Filename)
+	return ioutil.WriteFile(rc.Filename, rc.BackupData, 0644)
 }
 
-func (rc writeFileRC) Clean() error {
-	if rc.BackupFilename == "" {
-		return nil
-	}
-	return os.Remove(rc.BackupFilename)
-}
-
-func newWriteFileRC(filename string) (RollbackCleaner, error) {
+func newWriteFileU(filename string) (Unapplyer, error) {
 	oriFile, err := os.Open(filename)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return writeFileRC{Filename: filename}, nil
+			return writeFileU{Filename: filename}, nil
 		}
 		return nil, err
 	}
 	defer oriFile.Close()
-	backupFilename, err := backupFile(oriFile)
+	backupData, err := ioutil.ReadAll(oriFile)
 	if err != nil {
 		return nil, err
 	}
-	return writeFileRC{
-		Filename:       filename,
-		BackupFilename: backupFilename,
+	return writeFileU{
+		Filename:   filename,
+		BackupData: backupData,
 	}, nil
 }
 
-func (s WriteFile) Apply() (RollbackCleaner, error) {
+func (s WriteFile) Apply() (Unapplyer, error) {
 	if s.Perm == 0 {
 		s.Perm = 0644
 	}
-	rc, err := newWriteFileRC(s.Filename)
+	rc, err := newWriteFileU(s.Filename)
 	if err != nil {
 		return nil, err
 	}
 	if err := ioutil.WriteFile(s.Filename, s.Data, s.Perm); err != nil {
-		rc.Clean()
 		return nil, err
 	}
 	return rc, nil
@@ -76,39 +67,23 @@ func (s WriteFile) String() string {
 	return fmt.Sprintf("WriteFile(%s, %3o)", s.Filename, perm)
 }
 
-func backupFile(r io.Reader) (string, error) {
-	backupFile, err := ioutil.TempFile(os.TempDir(), "state")
-	if err != nil {
-		return "", errors.Wrap(err, "fail to create backup file")
-	}
-	defer backupFile.Close()
-	if _, err := io.Copy(backupFile, r); err != nil {
-		return "", errors.Wrap(err, "fail to backup file")
-	}
-	return backupFile.Name(), nil
-}
-
 type MakeDir struct {
 	Path string
 	Perm os.FileMode // default 0755
 }
 
-type makeDirRC struct {
+type makeDirU struct {
 	Path string
 }
 
-func (rc makeDirRC) Rollback() error {
+func (rc makeDirU) Unapply() error {
 	if rc.Path == "" {
 		return nil
 	}
 	return os.Remove(rc.Path)
 }
 
-func (rc makeDirRC) Clean() error {
-	return nil
-}
-
-func (s MakeDir) Apply() (RollbackCleaner, error) {
+func (s MakeDir) Apply() (Unapplyer, error) {
 	if s.Perm == 0 {
 		s.Perm = 0755
 	}
@@ -120,14 +95,14 @@ func (s MakeDir) Apply() (RollbackCleaner, error) {
 		if !stat.IsDir() {
 			return nil, fmt.Errorf("%s exists and is not a directory", s.Path)
 		}
-		return &dummyRC{}, nil
+		return &dummyU{}, nil
 	}
 
 	if err := os.MkdirAll(s.Path, s.Perm); err != nil {
 		return nil, errors.Wrap(err, "fail to make dir")
 	}
 
-	return makeDirRC{Path: s.Path}, nil
+	return makeDirU{Path: s.Path}, nil
 }
 
 func (s MakeDir) String() string {
@@ -143,12 +118,12 @@ type Symlink struct {
 	Link string
 }
 
-type symlinkRC struct {
+type symlinkU struct {
 	OldSrc string
 	Link   string
 }
 
-func (rc symlinkRC) Rollback() error {
+func (rc symlinkU) Unapply() error {
 	if rc.OldSrc == "" {
 		return nil
 	}
@@ -165,12 +140,10 @@ func (rc symlinkRC) Rollback() error {
 	return os.Symlink(rc.OldSrc, rc.Link)
 }
 
-func (rc symlinkRC) Clean() error { return nil }
-
-func (s Symlink) Apply() (RollbackCleaner, error) {
+func (s Symlink) Apply() (Unapplyer, error) {
 	if _, err := os.Stat(s.Src); err != nil {
 		if os.IsNotExist(err) {
-			return dummyRC{}, nil
+			return dummyU{}, nil
 		}
 		return nil, err
 	}
@@ -198,7 +171,7 @@ func (s Symlink) Apply() (RollbackCleaner, error) {
 	if err := os.Symlink(s.Src, s.Link); err != nil {
 		return nil, err
 	}
-	return symlinkRC{OldSrc: oldSrc, Link: s.Link}, nil
+	return symlinkU{OldSrc: oldSrc, Link: s.Link}, nil
 }
 
 func (s Symlink) String() string {

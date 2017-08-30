@@ -7,21 +7,20 @@ import (
 
 type (
 	State interface {
-		Apply() (RollbackCleaner, error)
+		Apply() (Unapplyer, error)
 	}
-	RollbackCleaner interface {
-		Rollback() error
-		Clean() error
+	Unapplyer interface {
+		Unapply() error
 	}
 )
 
 func Apply(states ...State) error {
-	rcs := make([]RollbackCleaner, 0, len(states))
+	rcs := make([]Unapplyer, 0, len(states))
 	for _, state := range states {
 		rc, err := state.Apply()
 		if err != nil {
 			for i := len(rcs) - 1; i >= 0; i-- {
-				if err := rcs[i].Rollback(); err != nil {
+				if err := rcs[i].Unapply(); err != nil {
 					log.Print(err)
 				}
 			}
@@ -30,16 +29,9 @@ func Apply(states ...State) error {
 		fmt.Println(state)
 		rcs = append(rcs, rc)
 	}
-	for i := len(rcs) - 1; i >= 0; i-- {
-		if err := rcs[i].Clean(); err != nil {
-			log.Print(err)
-		}
-	}
 	return nil
 }
 
-type dummyRC struct{}
+type dummyU struct{}
 
-func (rc dummyRC) Rollback() error { return nil }
-
-func (rc dummyRC) Clean() error { return nil }
+func (rc dummyU) Unapply() error { return nil }

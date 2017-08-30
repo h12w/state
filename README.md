@@ -1,4 +1,4 @@
 state
 =====
 
-This Go package supports state apply & rollback like Saltstack.
+This Go package supports state apply & Unapply like Saltstack.
