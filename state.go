@@ -1,6 +1,9 @@
 package state
 
-import "log"
+import (
+	"fmt"
+	"log"
+)
 
 type (
 	State interface {
@@ -12,10 +15,10 @@ type (
 	}
 )
 
-func ExecAll(execers ...State) error {
-	rcs := make([]RollbackCleaner, 0, len(execers))
-	for _, execer := range execers {
-		rc, err := execer.Apply()
+func Apply(states ...State) error {
+	rcs := make([]RollbackCleaner, 0, len(states))
+	for _, state := range states {
+		rc, err := state.Apply()
 		if err != nil {
 			for i := len(rcs) - 1; i >= 0; i-- {
 				if err := rcs[i].Rollback(); err != nil {
@@ -24,6 +27,7 @@ func ExecAll(execers ...State) error {
 			}
 			return err
 		}
+		fmt.Println(state)
 		rcs = append(rcs, rc)
 	}
 	for i := len(rcs) - 1; i >= 0; i-- {
